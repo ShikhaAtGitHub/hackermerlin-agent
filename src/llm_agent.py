@@ -3,52 +3,75 @@ from langchain_community.llms import Ollama
 from langchain.prompts import PromptTemplate
 from langchain.chains import LLMChain
 
+_DEFAULT_PROMPT = """
+You are a puzzle assistant. Your task is to reconstruct the hidden password.
+
+You are given Merlin's cryptic replies, plus Q/A pairs from the conversation.
+
+Rules:
+- If asked for reverse, flip the answer back.
+- If asked for first/last N letters, use them to assemble.
+- Use length hints to validate.
+- Prioritize ALL-CAPS tokens if they fit hints.
+- Only return ONE word, the password.
+- If not enough info, return WAIT.
+
+QA Pairs:
+{qa_pairs}
+
+Hints:
+first_letters: {first_letters}
+last_letters: {last_letters}
+length: {length}
+tokens: {tokens}
+additional_hints: {additional_hints}
+
+Merlin’s latest response:
+{merlin_response}
+
+Final password:
+"""
+
 def extract_password_with_llm(
     response_text: str,
     first_letters: str = "",
     last_letters: str = "",
     length: str = "",
-    additional_hints: str = ""
+    additional_hints: str = "",
+    question_context: dict = None,
+    qa_pairs=None,
+    tokens=None,
 ) -> str:
-    """
-    Use Llama3 via LangChain to extract the hidden secret password from Merlin's response,
-    considering both the latest response and accumulated hints.
-    """
+    if question_context is None:
+        question_context = {}
+    if qa_pairs is None:
+        qa_pairs = []
+    if tokens is None:
+        tokens = []
 
     llm = Ollama(model="llama3")
 
+    qa_pairs_str = "\n".join([f"Q: {qa['q']} A: {qa['a']}" for qa in qa_pairs])
+
     prompt = PromptTemplate(
-        input_variables=["merlin_response", "first_letters", "last_letters", "length", "additional_hints"],
-        template="""
-        You are a puzzle-solving assistant. 
-        Merlin gives cryptic answers. Hidden in his responses is a **single secret word** that serves as the password.  
-
-        Use the hints collected so far if available:
-        - First letters (if known): {first_letters}
-        - Last letters (if known): {last_letters}
-        - Expected length (if known): {length}
-        - Additional hints: {additional_hints}
-
-        Current Merlin response:
-        {merlin_response}
-
-        Rules:
-        - Return only the final predicted password (a single word).
-        - Do not explain or add punctuation.
-        - Prefer uppercase words if they appear to be the password.
-        - If hints form a clear word, use them to override vague guesses.
-
-        Predicted password:
-        """
+        input_variables=[
+            "qa_pairs", "merlin_response", "first_letters",
+            "last_letters", "length", "tokens", "additional_hints"
+        ],
+        template=_DEFAULT_PROMPT
     )
 
     chain = LLMChain(llm=llm, prompt=prompt)
     result = chain.run({
+        "qa_pairs": qa_pairs_str,
         "merlin_response": response_text,
         "first_letters": first_letters,
         "last_letters": last_letters,
         "length": length,
+        "tokens": " ".join(tokens),
         "additional_hints": additional_hints
-    })
+    }).strip()
 
-    return result.strip()
+    if not result or result.upper() == "WAIT":
+        return ""
+    return result.split()[0].strip()

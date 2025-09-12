@@ -1,102 +1,123 @@
 # src/safe_listener.py
 import asyncio
-from datetime import datetime
-from playwright.async_api import async_playwright
-from llm_agent import extract_password_with_llm
 import re
+from datetime import datetime
+from src.llm_agent import extract_password_with_llm
+from src.hint_accumulator import HintAccumulator
 
-async def run():
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=False)
-        page = await browser.new_page()
-        await page.goto("https://hackmerlin.io/")
 
-        # Wait for Merlin's chat input
-        chat_input = await page.wait_for_selector(
-            "textarea[placeholder='You can talk to merlin here...']"
+async def run(hint_acc: HintAccumulator, question_context: dict, tried: set, page):
+    """Listen to Merlin's responses on an already opened page and try passwords."""
+    await page.wait_for_selector("textarea[placeholder='You can talk to merlin here...']")
+    print(f"[{datetime.now()}] ✅ Ready. Ask your question manually in the browser.")
+
+    last_text = ""
+
+    denial_markers = [
+        "i cannot reveal", "must remain hidden", "not allowed",
+        "detected a manipulation", "i cannot tell", "must be protected",
+        "sorry", "forbidden"
+    ]
+
+    while True:
+        # Wait for a new Merlin response
+        await page.wait_for_function(
+            """(prev) => {
+                const quotes = document.querySelectorAll('blockquote.mantine-Blockquote-root');
+                if (!quotes.length) return false;
+                const lastText = quotes[quotes.length - 1].innerText;
+                return lastText !== prev;
+            }""",
+            arg=last_text,
+            timeout=60000
         )
 
-        print(f"[{datetime.now()}] Ready. Ask your question manually in the browser.")
+        responses = await page.query_selector_all("blockquote.mantine-Blockquote-root")
+        last_response = responses[-1]
+        p_element = await last_response.wait_for_selector("p")
+        last_text = await p_element.inner_text() if p_element else ""
 
-        last_text = ""
+        print(f"[{datetime.now()}] Merlin replied: {last_text}\n")
 
-        # Store hints collected so far
-        hints = {
-            "first_letters": "",
-            "last_letters": "",
-            "length": "",
-            "additional_hints": ""
-        }
+        # Record Q/A if we know the last question
+        if "last_question" in question_context:
+            hint_acc.add_qa(question_context["last_question"], last_text)
+            question_context.pop("last_question")
 
-        # Define refusal markers
-        denial_markers = [
-            "i cannot reveal",
-            "must remain hidden",
-            "not allowed",
-            "detected a manipulation",
-            "i cannot tell",
-            "must be protected",
-            "sorry",
-            "forbidden"
-        ]
+        # Skip denials
+        if any(marker in last_text.lower() for marker in denial_markers):
+            print(f"[{datetime.now()}] Merlin refused — waiting for better hints...\n")
+            continue
 
-        while True:
-            # Wait for new Merlin response
-            await page.wait_for_function(
-                """(prev) => {
-                    const quotes = document.querySelectorAll('blockquote.mantine-Blockquote-root');
-                    if (!quotes.length) return false;
-                    const lastText = quotes[quotes.length - 1].innerText;
-                    return lastText !== prev;
-                }""",
-                arg=last_text,
-                timeout=60000
-            )
+        # Parse hints
+        if m := re.search(r'\b(?:length|characters|letters).*?(\d+)\b', last_text, re.I):
+            hint_acc.update("length", m.group(1))
+        if m := re.search(r'first\s*(?:letters|characters).*?([A-Za-z]+)', last_text, re.I):
+            hint_acc.update("first_letters", m.group(1))
+        if m := re.search(r'last\s*(?:letters|characters).*?([A-Za-z]+)', last_text, re.I):
+            hint_acc.update("last_letters", m.group(1))
 
-            responses = await page.query_selector_all(
-                "blockquote.mantine-Blockquote-root"
-            )
-            last_response = responses[-1]
+        hint_acc.update("additional_hints", last_text)
 
-            p_element = await last_response.wait_for_selector("p")
-            last_text = await p_element.inner_text() if p_element else ""
-            print(f"[{datetime.now()}] Merlin replied: {last_text}\n")
+        # Collect uppercase tokens
+        tokens = re.findall(r'\b[A-Z]{3,}\b', last_text)
+        for token in tokens:
+            hint_acc.update("tokens", token)
 
-            # 1️⃣ Skip extraction if Merlin is just denying
-            if any(marker in last_text.lower() for marker in denial_markers):
-                print(f"[{datetime.now()}] Merlin refused to answer, waiting for better hints...\n")
+        # Track question context
+        if "reverse" in last_text.lower():
+            question_context["reverse"] = True
+        if "descending" in last_text.lower():
+            question_context["reverse"] = True
+
+        # Candidate synthesis
+        candidate_password = None
+        for token in hint_acc.get("tokens"):
+            if hint_acc.get("length") and len(token) != int(hint_acc.get("length")):
                 continue
+            if hint_acc.get("first_letters") and not token.startswith(hint_acc.get("first_letters")):
+                continue
+            if hint_acc.get("last_letters") and not token.endswith(hint_acc.get("last_letters")):
+                continue
+            candidate_password = token
+            break
 
-            # 2️⃣ Parse hints from Merlin's response
-            length_match = re.search(r'\b(?:length|characters|letters).*?(\d+)\b', last_text, re.I)
-            if length_match:
-                hints["length"] = length_match.group(1)
-
-            first_match = re.search(r'first\s*(?:letters|characters).*?([A-Za-z]+)', last_text, re.I)
-            if first_match:
-                hints["first_letters"] = first_match.group(1)
-
-            last_match = re.search(r'last\s*(?:letters|characters).*?([A-Za-z]+)', last_text, re.I)
-            if last_match:
-                hints["last_letters"] = last_match.group(1)
-
-            hints["additional_hints"] += last_text + " "
-
-            # 3️⃣ Use LLM to extract candidate password
+        if not candidate_password:
             candidate_password = extract_password_with_llm(
                 response_text=last_text,
-                first_letters=hints["first_letters"],
-                last_letters=hints["last_letters"],
-                length=hints["length"],
-                additional_hints=hints["additional_hints"]
+                first_letters=hint_acc.get("first_letters"),
+                last_letters=hint_acc.get("last_letters"),
+                length=hint_acc.get("length"),
+                additional_hints=hint_acc.get("additional_hints"),
+                question_context=question_context,
+                qa_pairs=hint_acc.get("qa_pairs"),
+                tokens=hint_acc.get("tokens"),
             )
 
-            print(f"[{datetime.now()}] Predicted secret password: {candidate_password}\n")
-            print("Submit this password manually in the page to proceed to the next level.")
-            print("Console will update automatically for each new response.\n")
+        if not candidate_password or candidate_password in tried:
+            continue
 
-            await asyncio.sleep(1)
+        tried.add(candidate_password)
+        print(f"[{datetime.now()}] 🔑 Predicted password: {candidate_password}\n")
 
-if __name__ == "__main__":
-    asyncio.run(run())
+        # Auto-submit
+        try:
+            pw_selector = "input[placeholder='SECRET PASSWORD']"
+            await page.fill(pw_selector, candidate_password)
+            await page.click("button:has-text('Submit')")
+            await asyncio.sleep(2)
 
+            popup = await page.query_selector("div[role='dialog'], div[class*='mantine-Modal']")
+            if popup:
+                popup_text = await popup.inner_text()
+                if "Awesome job!" in popup_text:
+                    print(f"[{datetime.now()}] 🎉 SUCCESS with: {candidate_password}")
+                    hint_acc.clear()
+                    tried.clear()
+                    question_context.clear()
+                elif "Bad secret" in popup_text or "isn't the secret phrase" in popup_text:
+                    print(f"[{datetime.now()}] ❌ Failed with: {candidate_password}")
+        except Exception as e:
+            print(f"[{datetime.now()}] ⚠️ Error during submission: {e}")
+
+        await asyncio.sleep(1)
