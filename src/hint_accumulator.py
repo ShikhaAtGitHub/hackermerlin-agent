@@ -1,4 +1,3 @@
-# src/hint_accumulator.py
 class HintAccumulator:
     def __init__(self):
         self.clear()
@@ -23,7 +22,6 @@ class HintAccumulator:
             self.hints[key] = value
 
     def add_qa(self, question: str, answer: str):
-        """Store a (question, answer) pair."""
         self.hints["qa_pairs"].append({"q": question, "a": answer})
 
     def get(self, key: str):

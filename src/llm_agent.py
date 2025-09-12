@@ -1,4 +1,3 @@
-# src/llm_agent.py
 from langchain_community.llms import Ollama
 from langchain.prompts import PromptTemplate
 from langchain.chains import LLMChain
@@ -6,15 +5,12 @@ from langchain.chains import LLMChain
 _DEFAULT_PROMPT = """
 You are a puzzle assistant. Your task is to reconstruct the hidden password.
 
-You are given Merlin's cryptic replies, plus Q/A pairs from the conversation.
-
-Rules:
-- If asked for reverse, flip the answer back.
-- If asked for first/last N letters, use them to assemble.
-- Use length hints to validate.
-- Prioritize ALL-CAPS tokens if they fit hints.
-- Only return ONE word, the password.
-- If not enough info, return WAIT.
+Use conversation Q/A and hints. Apply these rules:
+- If asked for reverse/descending order and an ALL-CAPS token appears, reverse it back.
+- If asked for first/last N letters, stitch them.
+- Validate with length if provided.
+- Prefer ALL-CAPS tokens that fit hints.
+- Return ONE WORD only. If uncertain, return WAIT.
 
 QA Pairs:
 {qa_pairs}
