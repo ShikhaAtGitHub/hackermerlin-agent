@@ -1,3 +1,4 @@
+# src/hint_accumulator.py
 class HintAccumulator:
     def __init__(self):
         self.clear()
@@ -9,7 +10,7 @@ class HintAccumulator:
             "length": "",
             "additional_hints": "",
             "tokens": [],
-            "qa_pairs": []   # store Q/A pairs for LLM synthesis
+            "qa_pairs": []
         }
 
     def update(self, key: str, value: str):

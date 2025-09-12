@@ -9,7 +9,7 @@ Use conversation Q/A and hints. Apply these rules:
 - If asked for reverse/descending order and an ALL-CAPS token appears, reverse it back.
 - If asked for first/last N letters, stitch them.
 - Validate with length if provided.
-- Prefer ALL-CAPS tokens that fit hints.
+- Prefer ALL-CAPS or quoted tokens that fit hints.
 - Return ONE WORD only. If uncertain, return WAIT.
 
 QA Pairs:
@@ -46,7 +46,6 @@ def extract_password_with_llm(
         tokens = []
 
     llm = Ollama(model="llama3")
-
     qa_pairs_str = "\n".join([f"Q: {qa['q']} A: {qa['a']}" for qa in qa_pairs])
 
     prompt = PromptTemplate(
