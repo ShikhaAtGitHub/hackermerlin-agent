@@ -3,18 +3,17 @@
 Overview
 --------
 I built an automated agent to solve the HackMerlin puzzle game.
-The agent talks to Merlin, asks questions, collects his replies, and tries to guess the hidden password for each level.
+The agent talks to Merlin, asks questions, collects replies, and tries to guess the hidden password for each level.
 
 - Level 1–2: Password is usually written directly (quoted or uppercase).
 - Level 3–4: Password must be pieced together from hints (length, reversed word, first/last letters).
-- The agent can also handle “Awesome job!” popups and continue to the next level.
 
 How the Agent Works
 -------------------
-- **Playwright** → Automates the website (ask questions, read answers, submit passwords).
-- **Hint Accumulator** → Stores important clues like length, first/last letters, uppercase tokens, and Q/A pairs.
-- **LLM Agent** → If simple rules fail, uses a language model to combine all hints into one password.
-- **Safe Listener** → Orchestrates the whole process for each level.
+- Playwright → Automates the website (ask questions, read answers, submit passwords).
+- Hint Accumulator → Stores important clues like length, first/last letters, uppercase tokens, and Q/A pairs.
+- LLM Agent → If simple rules fail, uses a language model to combine all hints into one password.
+- Safe Listener → Orchestrates the whole process for each level.
 
 Improvements if Cost/Compute Was Unlimited
 ------------------------------------------
@@ -31,10 +30,11 @@ Improvements for a Cost-Constrained Setup
 
 Unique Challenges
 -----------------
-- **Inconsistent answers:** Sometimes uppercase, sometimes quoted, sometimes lowercase → solved with regex + cleaning.
-- **Popups blocking progress:** Had to detect and click “Continue.”
-- **Merlin stalling at Level 3:** Often repeats length → fixed by rephrasing questions.
-- **Balancing rules and LLM:** Too much LLM caused random guesses, too little made the agent stuck → solved with a step-by-step fallback (rules → stitching → LLM → rephrase).
+- Inconsistent answers: Sometimes uppercase, sometimes quoted, sometimes lowercase → solved with regex + cleaning.
+- Merlin stalling at Level 3
+At this level, Merlin often repeats unhelpful answers like “The password is six letters long.” again and again.
+This stalls the agent, since it keeps hearing the same clue without new information.
+- Balancing rules and LLM: Too much LLM caused random guesses, too little made the agent stuck → solved with a step-by-step fallback (rules → stitching → LLM → rephrase).
 
 Conclusion
 ----------
