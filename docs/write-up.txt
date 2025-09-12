@@ -15,20 +15,22 @@ How the Agent Works
 - LLM Agent → If simple rules fail, uses a language model to combine all hints into one password.
 - Safe Listener → Orchestrates the whole process for each level.
 
-Improvements if Cost/Compute Was Unlimited
+Q1. Improvements if Cost/Compute Was Unlimited
 ------------------------------------------
 - Use a very strong LLM (like GPT-4) for every step.
 - Ask many questions in parallel and merge answers.
 - Train a custom model to recognize passwords from Merlin’s patterns.
 
-Improvements for a Cost-Constrained Setup
+Q2. Improvements for a Cost-Constrained Setup
 -----------------------------------------
 - Use regex + rules for Levels 1–3 (almost free).
 - Only call the LLM once per level, not for every response.
 - Run a small local model (like Llama) for cheap reasoning.
-- Cache Merlin’s repeated responses to avoid wasted analysis.
+- Controlled retries:
+Limit the number of rephrased questions or retries per level.
+This prevents cost spikes when Merlin keeps refusing.
 
-Unique Challenges
+Q3. Unique Challenges
 -----------------
 - Inconsistent answers: Sometimes uppercase, sometimes quoted, sometimes lowercase → solved with regex + cleaning.
 - Merlin stalling at Level 3
